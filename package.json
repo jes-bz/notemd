@@ -1,7 +1,7 @@
 {
   "name": "notemd",
   "displayName": "Notemd",
-  "icon": "logo.svg",
+  "icon": "logo.png",
   "description": "A markdown note-taking environment with WYSIWYG editing.",
   "version": "0.0.1",
   "repository": {
