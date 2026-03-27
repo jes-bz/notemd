@@ -41,13 +41,27 @@ Inject CSS to customize the editor layout. Example in `settings.json`:
 "notemd.customCss": ".vditor-ir pre.vditor-reset { line-height: 32px; padding-right: calc(100% - 800px) !important; }"
 ```
 
-## Build
+## Setup
 
 ```sh
-pnpm install
-pnpm build      # compile extension + webview
-pnpm package    # build + generate .vsix
+git clone https://github.com/jes-bz/notemd.git
+cd notemd
+npm install
 ```
+
+## Development
+
+```sh
+npm run build      # compile extension + bundle webview
+npm run compile    # compile extension only (tsc)
+npm run package    # build + generate .vsix for local install
+```
+
+The `.vsix` file is generated in the project root. Install it in VS Code via:
+
+1. Open the Extensions sidebar
+2. Click `...` → Install from VSIX...
+3. Select `notemd-0.0.1.vsix`
 
 ## License
 
