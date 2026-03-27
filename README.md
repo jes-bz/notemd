@@ -1,86 +1,54 @@
-# Markdown Editor — A full-featured WYSIWYG editor for markdown
+# Notemd
 
-[![badge_title](https://vsmarketplacebadges.dev/version-short/zaaack.markdown-editor.svg)](https://marketplace.visualstudio.com/items?itemName=zaaack.markdown-editor) [![](https://vsmarketplacebadges.dev/installs-short/zaaack.markdown-editor.svg)](https://marketplace.visualstudio.com/items?itemName=zaaack.markdown-editor) [![](https://vsmarketplacebadges.dev/rating-short/zaaack.markdown-editor.svg)](https://marketplace.visualstudio.com/items?itemName=zaaack.markdown-editor)
-
-## Demo
-
-![demo](./demo.gif)
-
-## Features
-
-1. What You See Is What You Get (WYSIWYG)
-2. Auto sync changes between the VSCode editor and webview
-3. Copy markdown/html
-4. Uploaded/pasted/drag-dropped images will be auto-saved to the `assets` folder
-5. Multi-theme support
-6. Shortcut keys
-7. Multiple editti[](https://)ng modes: instant Rendering mode (**Recommand!**) / WYSIWYG mode / split screen mode
-8. Markdown extensions
-9. Multiple graph support including KaTeX / Mermaid / Graphviz / ECharts / abc.js(notatioan) / ...
-10. For more usage please see [vditor](https://github.com/Vanessa219/vditor)
-
-## Install
-
-[https://marketplace.visualstudio.com/items?itemName=zaaack.markdown-editor](https://marketplace.visualstudio.com/items?itemName=zaaack.markdown-editor)
-
-## Supported syntax
-
-[demo article](https://ld246.com/guide/markdown)
+A markdown note-taking environment with WYSIWYG editing for VS Code.
 
 ## Usage
 
-### 1. Command mode in markdown file
+- **Command palette**: `Notemd: Open with Notemd`
+- **Keybinding**: `cmd+shift+alt+m` (macOS) / `ctrl+shift+alt+m` (Windows/Linux)
+- **Context menu**: Right-click a `.md` file in the editor tab or explorer
+- **Default editor**: Right-click a `.md` file → Open With... → Notemd
 
-- open a markdown file
-- type `cmd-shift-p` to enter command mode
-- type `markdown-editor: Open with markdown editor`
+## Settings
 
-### 2. Key bindings
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `notemd.imageSaveFolder` | `assets` | Folder where pasted/uploaded images are saved. Relative to the markdown file by default. Use template variables for custom paths. |
+| `notemd.useVscodeThemeColor` | `true` | Sync the editor background color with your VS Code theme. |
+| `notemd.customCss` | `""` | Custom CSS injected into the editor webview. |
 
-- open a markdown file
-- type `ctrl+shift+alt+m` for win or `cmd+shift+alt+m` for mac
+### Image Save Folder
 
-### 3. Explorer Context menu
+Configure where images are saved when pasted or drag-dropped into the editor.
 
-- right click on markdown file
-- then click `Open with markdown editor`
+| Template Variable | Expands To |
+|-------------------|------------|
+| `${projectRoot}` | Workspace root path |
+| `${file}` | Full path to the markdown file |
+| `${fileBasenameNoExtension}` | Filename without extension |
+| `${dir}` | Directory containing the markdown file |
 
-### 4. Editor title context menu
+Examples:
+- `assets` (default) — saves to `assets/` next to the markdown file
+- `${projectRoot}/assets` — saves to `assets/` at the workspace root
+- `${dir}/${fileBasenameNoExtension}-images` — saves to a folder named after the file
 
-- right click on a opened markdown file's tab title
-- then click `Open with markdown editor`
+### Custom CSS
 
-### 5. Open With... and Set Default Editor
+Inject CSS to customize the editor layout. Example in `settings.json`:
 
-- right click on a markdown file in Explorer
-- click `Open With...`
-- select `Markdown Editor` to open temporary
-- or click `Configure default editor...` and select `Markdown Editor` to set it as default
-
-### Custom CSS (custom layout and vditor personalization)
-
-Edit your settings.json and add
-
+```json
+"notemd.customCss": ".vditor-ir pre.vditor-reset { line-height: 32px; padding-right: calc(100% - 800px) !important; }"
 ```
-"markdown-editor.customCss": "my custom css rules"
 
-// Eg: "markdown-editor.customCss": ".vditor-ir pre.vditor-reset {line-height: 32px;padding-right: calc(100% - 800px) !important; margin-left: 100px;    font-family: system-ui !important;}"
+## Build
+
+```sh
+pnpm install
+pnpm build      # compile extension + webview
+pnpm package    # build + generate .vsix
 ```
-
-## Acknowledgement
-
-- [vscode](https://github.com/microsoft/vscode)
-- [vditor](https://github.com/Vanessa219/vditor)
-
-
-## Todo
-
-- [ ] Using [Custom Text Editor](https://code.visualstudio.com/api/extension-guides/custom-editors#custom-text-editor) ([demo](https://github.com/gera2ld/markmap-vscode))
 
 ## License
 
 MIT
-
-## Support
-
-If you like this extension make sure to star the repo. I am always looking for new ideas and feedback. In addition, it is possible to [donate via paypal](https://www.paypal.me/zaaack).

@@ -1,65 +1,60 @@
 {
-  "name": "markdown-editor",
-  "displayName": "Markdown Editor",
-  "icon": "media/logo.png",
-  "description": "A full-featured WYSIWYG editor for markdown.",
-  "version": "0.1.14",
-  "publisher": "zaaack",
-  "private": true,
+  "name": "notemd",
+  "displayName": "Notemd",
+  "icon": "logo.svg",
+  "description": "A markdown note-taking environment with WYSIWYG editing.",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jes-bz/notemd.git"
+  },
   "engines": {
-    "vscode": "^1.47.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages",
     "Other"
   ],
   "keywords": [
     "markdown",
+    "notes",
     "editor",
-    "wysiwyg",
-    "typora",
-    "markdown-previewer",
-    "markdown-editor"
+    "wysiwyg"
   ],
   "activationEvents": [
-    "onCommand:markdown-editor.openEditor",
-    "onWebviewPanel:markdown-editor",
+    "onCommand:notemd.openEditor",
+    "onWebviewPanel:notemd",
     "onLanguage:markdown",
-    "onCustomEditor:markdown-editor.customEditor"
+    "onCustomEditor:notemd.customEditor"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/zaaack/vscode-markdown-editor.git"
-  },
   "main": "out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "markdown-editor.openEditor",
-        "title": "Open with markdown editor",
-        "category": "markdown-editor"
+        "command": "notemd.openEditor",
+        "title": "Open with Notemd",
+        "category": "notemd"
       }
     ],
     "menus": {
       "explorer/context": [
         {
           "when": "resourceLangId == markdown",
-          "command": "markdown-editor.openEditor",
+          "command": "notemd.openEditor",
           "group": "navigation"
         }
       ],
       "editor/title/context": [
         {
           "when": "resourceLangId == markdown",
-          "command": "markdown-editor.openEditor",
+          "command": "notemd.openEditor",
           "group": "1_open"
         }
       ]
     },
     "customEditors": [
       {
-        "viewType": "markdown-editor.customEditor",
-        "displayName": "Markdown Editor",
+        "viewType": "notemd.customEditor",
+        "displayName": "Notemd",
         "selector": [
           {
             "filenamePattern": "*.md"
@@ -72,19 +67,19 @@
       }
     ],
     "configuration": {
-      "title": "markdown-editor",
+      "title": "notemd",
       "properties": {
-        "markdown-editor.imageSaveFolder": {
+        "notemd.imageSaveFolder": {
           "type": "string",
           "default": "assets",
           "description": "Save images to which folder when upload in markdown, default relative to the markdown file, you can set to project root via `${projectRoot}/assets`."
         },
-        "markdown-editor.useVscodeThemeColor": {
+        "notemd.useVscodeThemeColor": {
           "type": "boolean",
           "default": true,
-          "description": "Use vscode theme's background color as the markdown editor's background color."
+          "description": "Use vscode theme's background color as the editor's background color."
         },
-        "markdown-editor.customCss": {
+        "notemd.customCss": {
           "type": "string",
           "default": ""
         }
@@ -93,23 +88,32 @@
     "keybindings": [
       {
         "key": "ctrl+shift+alt+m",
-        "command": "markdown-editor.openEditor",
+        "command": "notemd.openEditor",
         "mac": "cmd+shift+alt+m",
         "when": "editorTextFocus && editorLangId == markdown"
       }
     ]
   },
   "scripts": {
-    "watch": "foy watch",
-    "start": "foy watch",
-    "pub": "foy build && npm version patch && git push origin master --tags && vsce package && vsce publish"
+    "build": "tsc -p ./ && esbuild ./src/media/main.ts --bundle --minify --sourcemap --outfile=./media/dist/main.js",
+    "compile": "tsc -p ./",
+    "package": "npm run build && npx @vscode/vsce package"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   },
   "devDependencies": {
-    "@types/node": "^12.12.0",
-    "@types/vscode": "^1.47.0",
-    "foy": "^0.2.5",
-    "ts-node": "9.1.1",
-    "typescript": "^4.2.2"
+    "@testing-library/user-event": "^13.1.5",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "date-fns": "^2.21.1",
+    "esbuild": "^0.25.0",
+    "jquery": "^3.6.0",
+    "jquery-confirm": "^3.3.4",
+    "lodash": "^4.17.21",
+    "typescript": "^5.7.0",
+    "vditor": "^3.8.4"
   },
   "packageManager": "pnpm@9.7.1"
 }
