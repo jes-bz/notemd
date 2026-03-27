@@ -1,5 +1,7 @@
 # Notemd
 
+<img src="logo.png" alt="Notemd" width="128">
+
 A markdown note-taking environment with WYSIWYG editing for VS Code.
 
 ## Usage

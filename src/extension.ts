@@ -154,6 +154,7 @@ class EditorPanel {
   public static readonly viewType = 'notemd'
   private disposables: vscode.Disposable[] = []
   private isEdit = false
+  private lastWebviewContent = ''
 
   public static async createOrShow(
     context: vscode.ExtensionContext,
@@ -231,7 +232,7 @@ class EditorPanel {
 
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.fileName !== this.document.fileName) return
-      if (this.panel.active) return
+      if (e.document.getText() === this.lastWebviewContent) return
       textEditTimer && clearTimeout(textEditTimer)
       textEditTimer = setTimeout(() => {
         this.postMessage()
@@ -260,6 +261,7 @@ class EditorPanel {
             break
           case 'edit':
             if (this.panel.active) {
+              this.lastWebviewContent = message.content
               await syncToEditor(this.document, this.uri, message.content)
               this.updateEditTitle()
             }
@@ -348,6 +350,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
 
     const disposables: vscode.Disposable[] = []
     let isEditing = false
+    let lastWebviewContent = ''
 
     const updateEditTitle = () => {
       const isDirty = document.isDirty
@@ -370,7 +373,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
 
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.fileName !== document.fileName) return
-      if (webviewPanel.active) return
+      if (e.document.getText() === lastWebviewContent) return
       updateWebview()
       updateEditTitle()
     }, null, disposables)
@@ -397,6 +400,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
           break
         case 'edit':
           if (webviewPanel.active) {
+            lastWebviewContent = message.content
             await syncToEditor(document, uri, message.content)
             updateEditTitle()
           }
