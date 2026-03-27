@@ -10,27 +10,31 @@ A markdown note-taking environment with WYSIWYG editing for VS Code.
 - **Keybinding**: `cmd+shift+alt+m` (macOS) / `ctrl+shift+alt+m` (Windows/Linux)
 - **Context menu**: Right-click a `.md` file in the editor tab or explorer
 - **Default editor**: Right-click a `.md` file → Open With... → Notemd
+- **Reveal in Source**: Command palette → `Notemd: Reveal in Source` — opens the plain text editor at the cursor's line. Useful for Claude Code integration (selections in the text editor are visible to other extensions).
 
 ## Settings
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `notemd.imageSaveFolder` | `assets` | Folder where pasted/uploaded images are saved. Relative to the markdown file by default. Use template variables for custom paths. |
-| `notemd.useVscodeThemeColor` | `true` | Sync the editor background color with your VS Code theme. |
-| `notemd.customCss` | `""` | Custom CSS injected into the editor webview. |
+
+| Setting                      | Default  | Description                                                                                                                       |
+| ---------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `notemd.imageSaveFolder`     | `assets` | Folder where pasted/uploaded images are saved. Relative to the markdown file by default. Use template variables for custom paths. |
+| `notemd.useVscodeThemeColor` | `true`   | Sync the editor background color with your VS Code theme.                                                                         |
+| `notemd.customCss`           | `""`     | Custom CSS injected into the editor webview.                                                                                      |
 
 ### Image Save Folder
 
 Configure where images are saved when pasted or drag-dropped into the editor.
 
-| Template Variable | Expands To |
-|-------------------|------------|
-| `${projectRoot}` | Workspace root path |
-| `${file}` | Full path to the markdown file |
-| `${fileBasenameNoExtension}` | Filename without extension |
-| `${dir}` | Directory containing the markdown file |
+
+| Template Variable            | Expands To                             |
+| ---------------------------- | -------------------------------------- |
+| `${projectRoot}`             | Workspace root path                    |
+| `${file}`                    | Full path to the markdown file         |
+| `${fileBasenameNoExtension}` | Filename without extension             |
+| `${dir}`                     | Directory containing the markdown file |
 
 Examples:
+
 - `assets` (default) — saves to `assets/` next to the markdown file
 - `${projectRoot}/assets` — saves to `assets/` at the workspace root
 - `${dir}/${fileBasenameNoExtension}-images` — saves to a folder named after the file

@@ -135,10 +135,69 @@ export function activate(context: vscode.ExtensionContext) {
     )
   )
 
+  // Track active custom editor webviews
+  const activeWebviews = new Map<vscode.WebviewPanel, vscode.TextDocument>()
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('notemd.revealInSource', async () => {
+      let webview: vscode.Webview | undefined
+      let document: vscode.TextDocument | undefined
+
+      // Check EditorPanel
+      if (EditorPanel.currentPanel) {
+        webview = EditorPanel.currentPanel.webview
+        document = EditorPanel.currentPanel.document
+      }
+
+      // Check custom editors
+      if (!webview) {
+        for (const [panel, info] of activeWebviews) {
+          if (panel.active) {
+            webview = panel.webview
+            document = info
+            break
+          }
+        }
+      }
+
+      if (!webview || !document) return
+
+      const offset = await new Promise<number>((resolve) => {
+        const timeout = setTimeout(() => resolve(-1), 1000)
+        const disposable = webview.onDidReceiveMessage((msg: any) => {
+          if (msg.command === 'cursor-offset') {
+            clearTimeout(timeout)
+            disposable.dispose()
+            resolve(msg.offset)
+          }
+        })
+        webview.postMessage({ command: 'get-cursor-offset' })
+      })
+
+      if (offset < 0) return
+
+      const text = document.getText()
+      const lines = text.split('\n')
+      const lineIndex = text.substring(0, offset).split('\n').length - 1
+      const lineLength = lines[lineIndex]?.length ?? 0
+      const editor = await vscode.window.showTextDocument(document.uri, {
+        preview: false,
+        viewColumn: vscode.ViewColumn.Beside,
+      })
+      const start = new vscode.Position(lineIndex, 0)
+      const end = new vscode.Position(lineIndex, lineLength)
+      editor.selection = new vscode.Selection(start, end)
+      editor.revealRange(
+        new vscode.Range(start, end),
+        vscode.TextEditorRevealType.InCenter
+      )
+    })
+  )
+
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       NotemdProvider.viewType,
-      new NotemdProvider(context),
+      new NotemdProvider(context, activeWebviews),
       {
         webviewOptions: { retainContextWhenHidden: true },
         supportsMultipleEditorsPerDocument: false,
@@ -199,6 +258,10 @@ class EditorPanel {
 
   private get fsPath() {
     return this.uri.fsPath
+  }
+
+  public get webview(): vscode.Webview {
+    return this.panel.webview
   }
 
   private constructor(
@@ -318,6 +381,16 @@ class EditorPanel {
     this.panel.webview.postMessage({ command: 'update', content, ...props })
   }
 
+  public onDidReceiveMessage(
+    callback: (message: any) => void
+  ): vscode.Disposable {
+    return this.panel.webview.onDidReceiveMessage(callback)
+  }
+
+  public sendMessage(message: any) {
+    this.panel.webview.postMessage(message)
+  }
+
   public dispose() {
     EditorPanel.currentPanel = undefined
     this.panel.dispose()
@@ -331,7 +404,10 @@ class EditorPanel {
 class NotemdProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'notemd.customEditor'
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly activeWebviews: Map<vscode.WebviewPanel, vscode.TextDocument>
+  ) {}
 
   public async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -339,6 +415,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
     _token: vscode.CancellationToken
   ): Promise<void> {
     const uri = document.uri
+    this.activeWebviews.set(webviewPanel, document)
     webviewPanel.webview.options = getWebviewRoots()
     webviewPanel.webview.html = buildWebviewHtml(
       webviewPanel.webview,
@@ -433,6 +510,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
     }, null, disposables)
 
     webviewPanel.onDidDispose(() => {
+      this.activeWebviews.delete(webviewPanel)
       disposables.forEach((d) => d.dispose())
     })
   }

@@ -33,6 +33,11 @@
         "command": "notemd.openEditor",
         "title": "Open with Notemd",
         "category": "notemd"
+      },
+      {
+        "command": "notemd.revealInSource",
+        "title": "Reveal in Source",
+        "category": "notemd"
       }
     ],
     "menus": {
