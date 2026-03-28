@@ -18,29 +18,25 @@ function formatDate(date: Date, fmt: string): string {
     ss: String(date.getSeconds()).padStart(2, '0'),
   }
   let result = fmt
-  // Replace longest tokens first to avoid partial matches
   for (const key of Object.keys(tokens).sort((a, b) => b.length - a.length)) {
     result = result.replace(key, tokens[key])
   }
   return result
 }
 
-function showError(msg: string) {
+function showError(msg: string): void {
   vscode.window.showErrorMessage(`[notemd] ${msg}`)
-}
-
-function getDriveFolders(): vscode.Uri[] {
-  const folders = []
-  for (let i = 65; i <= 90; i++) {
-    folders.push(vscode.Uri.file(`${String.fromCharCode(i)}:/`))
-  }
-  return folders
 }
 
 function getWebviewRoots(): vscode.WebviewOptions & vscode.WebviewPanelOptions {
   return {
     enableScripts: true,
-    localResourceRoots: [vscode.Uri.file('/'), ...getDriveFolders()],
+    localResourceRoots: [
+      vscode.Uri.file('/'),
+      ...Array.from({ length: 26 }, (_, i) =>
+        vscode.Uri.file(`${String.fromCharCode(65 + i)}:/`)
+      ),
+    ],
     retainContextWhenHidden: true,
     enableCommandUris: true,
   }
@@ -96,7 +92,7 @@ async function syncToEditor(
   document: vscode.TextDocument | undefined,
   uri: vscode.Uri,
   content: string
-) {
+): Promise<void> {
   if (document) {
     const edit = new vscode.WorkspaceEdit()
     edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), content)
@@ -121,13 +117,14 @@ async function handleUploadMessage(
   uri: vscode.Uri,
   fsPath: string,
   webview: vscode.Webview
-) {
+): Promise<void> {
   const assetsFolder = getAssetsFolder(uri)
   try {
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(assetsFolder))
   } catch (error) {
     console.error(error)
     showError(`Invalid image folder: ${assetsFolder}`)
+    return
   }
   await Promise.all(
     files.map(async (f: any) => {
@@ -147,7 +144,66 @@ async function handleUploadMessage(
   webview.postMessage({ command: 'uploaded', files: relativePaths })
 }
 
-export function activate(context: vscode.ExtensionContext) {
+function createMessageHandler(deps: {
+  context: vscode.ExtensionContext
+  document: vscode.TextDocument
+  uri: vscode.Uri
+  fsPath: string
+  webview: vscode.Webview
+  postInit: (msg: any) => void
+  onEdit: (content: string) => Promise<void>
+  onSaveDone: () => void
+}) {
+  return async (message: any) => {
+    switch (message.command) {
+      case 'ready':
+        deps.postInit({
+          type: 'init',
+          options: getInitOptions(deps.context),
+          theme: getTheme(),
+        })
+        break
+      case 'save-options':
+        deps.context.globalState.update(VDITOR_OPTIONS_KEY, message.options)
+        break
+      case 'info':
+        vscode.window.showInformationMessage(message.content)
+        break
+      case 'error':
+        showError(message.content)
+        break
+      case 'edit':
+        await deps.onEdit(message.content)
+        break
+      case 'reset-config':
+        await deps.context.globalState.update(VDITOR_OPTIONS_KEY, {})
+        break
+      case 'save':
+        await syncToEditor(deps.document, deps.uri, message.content)
+        await deps.document.save()
+        deps.onSaveDone()
+        break
+      case 'upload':
+        await handleUploadMessage(
+          message.files,
+          deps.uri,
+          deps.fsPath,
+          deps.webview
+        )
+        break
+      case 'open-link': {
+        let url = message.href
+        if (!/^http/.test(url)) {
+          url = NodePath.resolve(deps.fsPath, '..', url)
+        }
+        vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url))
+        break
+      }
+    }
+  }
+}
+
+export function activate(context: vscode.ExtensionContext): void {
   output.appendLine('notemd activating...')
   output.appendLine(`Extension path: ${context.extensionUri.fsPath}`)
   context.subscriptions.push(output)
@@ -163,7 +219,6 @@ export function activate(context: vscode.ExtensionContext) {
   )
   output.appendLine('Registered: notemd.openEditor')
 
-  // Track active custom editor webviews
   const activeWebviews = new Map<vscode.WebviewPanel, vscode.TextDocument>()
 
   context.subscriptions.push(
@@ -171,13 +226,11 @@ export function activate(context: vscode.ExtensionContext) {
       let webview: vscode.Webview | undefined
       let document: vscode.TextDocument | undefined
 
-      // Check EditorPanel
       if (EditorPanel.currentPanel) {
         webview = EditorPanel.currentPanel.webview
         document = EditorPanel.currentPanel.document
       }
 
-      // Check custom editors
       if (!webview) {
         for (const [panel, info] of activeWebviews) {
           if (panel.active) {
@@ -236,15 +289,16 @@ export function activate(context: vscode.ExtensionContext) {
       const dateFormat = config.get<string>('dailyNoteFormat') || 'yyyy-MM-dd'
 
       const filename = formatDate(new Date(), dateFormat) + '.md'
-      const dir = folder
-        ? NodePath.resolve(workspaceRoot, folder)
-        : workspaceRoot
-      const filePath = NodePath.join(dir, filename)
+      const filePath = NodePath.join(
+        folder ? NodePath.resolve(workspaceRoot, folder) : workspaceRoot,
+        filename
+      )
       const uri = vscode.Uri.file(filePath)
 
       try {
         await vscode.workspace.fs.stat(uri)
-      } catch {
+      } catch (error) {
+        console.error(error)
         await vscode.workspace.fs.createDirectory(
           vscode.Uri.file(NodePath.dirname(filePath))
         )
@@ -276,7 +330,7 @@ class EditorPanel {
   public static currentPanel: EditorPanel | undefined
   public static readonly viewType = 'notemd'
   private disposables: vscode.Disposable[] = []
-  private isEdit = false
+  private isEditing = false
   private lastWebviewContent = ''
 
   public static async createOrShow(
@@ -320,15 +374,11 @@ class EditorPanel {
     EditorPanel.currentPanel = new EditorPanel(context, panel, doc, uri)
   }
 
-  private get fsPath() {
-    return this.uri.fsPath
-  }
-
   public get webview(): vscode.Webview {
     return this.panel.webview
   }
 
-  private constructor(
+  constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: vscode.WebviewPanel,
     public document: vscode.TextDocument,
@@ -337,16 +387,16 @@ class EditorPanel {
     this.panel.webview.html = buildWebviewHtml(
       panel.webview,
       context.extensionUri,
-      this.fsPath,
+      this.uri.fsPath,
       vscode.workspace.getConfiguration('notemd').get<string>('customCss') || ''
     )
-    this.panel.title = NodePath.basename(this.fsPath)
+    this.panel.title = NodePath.basename(this.uri.fsPath)
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables)
 
-    let textEditTimer: ReturnType<typeof setTimeout> | void
+    let textEditTimer: ReturnType<typeof setTimeout> | undefined
     vscode.workspace.onDidCloseTextDocument((e) => {
-      if (e.fileName === this.fsPath) this.dispose()
+      if (e.fileName === this.uri.fsPath) this.dispose()
     }, this.disposables)
 
     vscode.window.onDidChangeActiveColorTheme(() => {
@@ -368,67 +418,32 @@ class EditorPanel {
     }, this.disposables)
 
     this.panel.webview.onDidReceiveMessage(
-      async (message) => {
-        switch (message.command) {
-          case 'ready':
-            this.postMessage({
-              type: 'init',
-              options: getInitOptions(this.context),
-              theme: getTheme(),
-            })
-            break
-          case 'save-options':
-            this.context.globalState.update(VDITOR_OPTIONS_KEY, message.options)
-            break
-          case 'info':
-            vscode.window.showInformationMessage(message.content)
-            break
-          case 'error':
-            showError(message.content)
-            break
-          case 'edit':
-            if (this.panel.active) {
-              this.lastWebviewContent = message.content
-              await syncToEditor(this.document, this.uri, message.content)
-              this.updateEditTitle()
-            }
-            break
-          case 'reset-config':
-            await this.context.globalState.update(VDITOR_OPTIONS_KEY, {})
-            break
-          case 'save':
-            await syncToEditor(this.document, this.uri, message.content)
-            await this.document.save()
+      createMessageHandler({
+        context: this.context,
+        document: this.document,
+        uri: this.uri,
+        fsPath: this.uri.fsPath,
+        webview: this.panel.webview,
+        postInit: (msg) => this.postMessage(msg),
+        onEdit: async (content) => {
+          if (this.panel.active) {
+            this.lastWebviewContent = content
+            await syncToEditor(this.document, this.uri, content)
             this.updateEditTitle()
-            break
-          case 'upload':
-            await handleUploadMessage(
-              message.files,
-              this.uri,
-              this.fsPath,
-              this.panel.webview
-            )
-            break
-          case 'open-link': {
-            let url = message.href
-            if (!/^http/.test(url)) {
-              url = NodePath.resolve(this.fsPath, '..', url)
-            }
-            vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url))
-            break
           }
-        }
-      },
+        },
+        onSaveDone: () => this.updateEditTitle(),
+      }),
       null,
       this.disposables
     )
   }
 
   private updateEditTitle() {
-    const isEdit = this.document.isDirty
-    if (isEdit !== this.isEdit) {
-      this.isEdit = isEdit
-      this.panel.title = `${isEdit ? '[edit]' : ''}${NodePath.basename(this.fsPath)}`
+    const isDirty = this.document.isDirty
+    if (isDirty !== this.isEditing) {
+      this.isEditing = isDirty
+      this.panel.title = `${isDirty ? '[edit]' : ''}${NodePath.basename(this.uri.fsPath)}`
     }
   }
 
@@ -438,30 +453,18 @@ class EditorPanel {
       options?: any
       theme?: 'dark' | 'light'
     } = {}
-  ) {
+  ): Promise<void> {
     const content = this.document
       ? this.document.getText()
       : (await vscode.workspace.fs.readFile(this.uri)).toString()
     this.panel.webview.postMessage({ command: 'update', content, ...props })
   }
 
-  public onDidReceiveMessage(
-    callback: (message: any) => void
-  ): vscode.Disposable {
-    return this.panel.webview.onDidReceiveMessage(callback)
-  }
-
-  public sendMessage(message: any) {
-    this.panel.webview.postMessage(message)
-  }
-
   public dispose() {
     EditorPanel.currentPanel = undefined
     this.panel.dispose()
-    while (this.disposables.length) {
-      const d = this.disposables.pop()
-      if (d) d.dispose()
-    }
+    this.disposables.forEach((d) => d?.dispose())
+    this.disposables = []
   }
 }
 
@@ -519,59 +522,31 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
       updateEditTitle()
     }, null, disposables)
 
-    webviewPanel.webview.onDidReceiveMessage(async (message) => {
-      switch (message.command) {
-        case 'ready':
+    webviewPanel.webview.onDidReceiveMessage(
+      createMessageHandler({
+        context: this.context,
+        document,
+        uri,
+        fsPath: uri.fsPath,
+        webview: webviewPanel.webview,
+        postInit: (msg) =>
           webviewPanel.webview.postMessage({
             command: 'update',
-            type: 'init',
             content: document.getText(),
-            options: getInitOptions(this.context),
-            theme: getTheme(),
-          })
-          break
-        case 'save-options':
-          this.context.globalState.update(VDITOR_OPTIONS_KEY, message.options)
-          break
-        case 'info':
-          vscode.window.showInformationMessage(message.content)
-          break
-        case 'error':
-          showError(message.content)
-          break
-        case 'edit':
+            ...msg,
+          }),
+        onEdit: async (content) => {
           if (webviewPanel.active) {
-            lastWebviewContent = message.content
-            await syncToEditor(document, uri, message.content)
+            lastWebviewContent = content
+            await syncToEditor(document, uri, content)
             updateEditTitle()
           }
-          break
-        case 'reset-config':
-          await this.context.globalState.update(VDITOR_OPTIONS_KEY, {})
-          break
-        case 'save':
-          await syncToEditor(document, uri, message.content)
-          await document.save()
-          updateEditTitle()
-          break
-        case 'upload':
-          await handleUploadMessage(
-            message.files,
-            uri,
-            uri.fsPath,
-            webviewPanel.webview
-          )
-          break
-        case 'open-link': {
-          let url = message.href
-          if (!/^http/.test(url)) {
-            url = NodePath.resolve(uri.fsPath, '..', url)
-          }
-          vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url))
-          break
-        }
-      }
-    }, null, disposables)
+        },
+        onSaveDone: updateEditTitle,
+      }),
+      null,
+      disposables
+    )
 
     webviewPanel.onDidDispose(() => {
       this.activeWebviews.delete(webviewPanel)

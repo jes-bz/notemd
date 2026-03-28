@@ -1,7 +1,7 @@
 import { t } from './lang'
 import { confirm } from './utils'
 
-function copyClipboard(getContent: () => string, label: string) {
+function copyClipboard(getContent: () => string, label: string): () => Promise<void> {
   return async () => {
     try {
       await navigator.clipboard.writeText(getContent())
@@ -84,11 +84,11 @@ export const toolbar = [
       {
         name: 'reset-config',
         icon: t('resetConfig'),
-        async click() {
-          confirm(t('resetConfirm'), async () => {
+        click() {
+          confirm(t('resetConfirm'), () => {
             try {
-              await vscode.postMessage({ command: 'reset-config' })
-              await vscode.postMessage({ command: 'ready' })
+              vscode.postMessage({ command: 'reset-config' })
+              vscode.postMessage({ command: 'ready' })
               vscode.postMessage({
                 command: 'info',
                 content: 'Reset config successfully!',
@@ -107,10 +107,7 @@ export const toolbar = [
       'help',
     ],
   },
-].map((it: any) => {
-  if (typeof it === 'string') {
-    it = { name: it }
-  }
-  it.tipPosition = it.tipPosition ?? 's'
-  return it
-})
+].map((it: any) => ({
+  ...(typeof it === 'string' ? { name: it } : it),
+  tipPosition: it.tipPosition ?? 's',
+}))

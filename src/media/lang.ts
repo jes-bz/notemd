@@ -1,4 +1,4 @@
-const Langs = {
+const LANGS = {
   en_US: {
     save: 'Save',
     copyMarkdown: 'Copy Markdown',
@@ -22,8 +22,10 @@ const Langs = {
 }
 
 const raw = navigator.language.replace('-', '_')
-export const lang: keyof typeof Langs = raw in Langs ? raw as keyof typeof Langs : 'en_US'
+export const lang: keyof typeof LANGS = raw in LANGS
+  ? (raw as keyof typeof LANGS)
+  : 'en_US'
 
 export function t(msg: string) {
-  return (Langs[lang] && Langs[lang][msg]) || Langs.en_US[msg]
+  return (LANGS[lang] && LANGS[lang][msg]) || LANGS.en_US[msg]
 }

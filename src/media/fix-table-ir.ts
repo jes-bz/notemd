@@ -15,16 +15,10 @@ const ICONS_SVG = `<svg style="position:absolute;width:0;height:0;overflow:hidde
 <symbol id="vditor-icon-delete-column" viewBox="0 0 32 32"><path d="M21.563 21.195c-0.056-0.048-0.128-0.076-0.204-0.076h-2.188c-0.096 0-0.184 0.044-0.244 0.116l-2.928 3.512-2.924-3.512c-0.06-0.072-0.152-0.116-0.244-0.116h-2.192c-0.076 0-0.148 0.028-0.204 0.076-0.136 0.112-0.156 0.316-0.04 0.452l4.091 4.911-4.096 4.915c-0.112 0.136-0.096 0.336 0.04 0.452 0.056 0.048 0.128 0.076 0.204 0.076h2.188c0.096 0 0.184-0.044 0.244-0.116l2.924-3.512 2.924 3.512c0.06 0.072 0.152 0.116 0.244 0.116h2.2c0.076 0 0.148-0.028 0.204-0.076 0.136-0.112 0.156-0.316 0.04-0.452l-4.091-4.915 4.096-4.915c0.112-0.136 0.092-0.336-0.044-0.448zM14.4 17.28h3.2c0.176 0 0.32-0.144 0.32-0.32v-16.638c0-0.176-0.144-0.32-0.32-0.32h-3.2c-0.176 0-0.32 0.144-0.32 0.32v16.638c0 0.176 0.144 0.32 0.32 0.32zM9.521 10.961h-6.639v-9.999c0-0.132-0.108-0.24-0.24-0.24h-2.4c-0.132 0-0.24 0.108-0.24 0.24v11.679c0 0.664 0.536 1.2 1.2 1.2h8.319c0.132 0 0.24-0.108 0.24-0.24v-2.4c0-0.132-0.108-0.24-0.24-0.24zM31.758 0.722h-2.4c-0.132 0-0.24 0.108-0.24 0.24v9.999h-6.639c-0.132 0-0.24 0.108-0.24 0.24v2.4c0 0.132 0.108 0.24 0.24 0.24h8.319c0.664 0 1.2-0.536 1.2-1.2v-11.679c0-0.132-0.108-0.24-0.24-0.24z"/></symbol>
 </defs></svg>`
 
-const tablePanelId = 'fix-table-ir-wrapper'
+const TABLE_PANEL_ID = 'fix-table-ir-wrapper'
 let disableVscodeHotkeys = false
 
-function ensureIconSprite() {
-  if (!document.getElementById('vditor-icon-sprite')) {
-    document.body.insertAdjacentHTML('afterbegin', ICONS_SVG.replace('<svg ', '<svg id="vditor-icon-sprite" '))
-  }
-}
-
-const buttonDefs = [
+const BUTTON_DEFS = [
   { type: 'left', label: 'Align left', hotkey: '⇧⌘L', icon: '#vditor-icon-align-left' },
   { type: 'center', label: 'Align center', hotkey: '⇧⌘C', icon: '#vditor-icon-align-center' },
   { type: 'right', label: 'Align right', hotkey: '⇧⌘R', icon: '#vditor-icon-align-right' },
@@ -36,7 +30,7 @@ const buttonDefs = [
   { type: 'deleteColumn', label: 'Delete column', hotkey: '⇧⌘-', icon: '#vditor-icon-delete-column' },
 ]
 
-const handleMap: Record<string, string[]> = {
+const HANDLE_MAP: Record<string, string[]> = {
   left: ['{ctrl}{shift}l{/shift}{/ctrl}', '{meta}{shift}l{/shift}{/meta}'],
   center: ['{ctrl}{shift}c{/shift}{/ctrl}', '{meta}{shift}c{/shift}{/meta}'],
   right: ['{ctrl}{shift}r{/shift}{/ctrl}', '{meta}{shift}r{/shift}{/meta}'],
@@ -48,22 +42,25 @@ const handleMap: Record<string, string[]> = {
   deleteColumn: ['{ctrl}{shift}_{/shift}{/ctrl}', '{meta}{shift}-{/shift}{/meta}'],
 }
 
-export function fixTableIr() {
-  ensureIconSprite()
+export function fixTableIr(): void {
+  if (!document.getElementById('vditor-icon-sprite')) {
+    document.body.insertAdjacentHTML('afterbegin', ICONS_SVG.replace('<svg ', '<svg id="vditor-icon-sprite" '))
+  }
+
   const eventRoot = vditor.vditor.ir.element
 
-  function insertTablePanel() {
-    let tablePanel = document.getElementById(tablePanelId) as HTMLDivElement | null
+  function insertTablePanel(): HTMLDivElement {
+    let tablePanel = document.getElementById(TABLE_PANEL_ID) as HTMLDivElement | null
     if (!tablePanel) {
       tablePanel = document.createElement('div')
-      tablePanel.id = tablePanelId
+      tablePanel.id = TABLE_PANEL_ID
       document.body.appendChild(tablePanel)
 
       const panel = document.createElement('div')
       panel.className = 'vditor-panel vditor-panel--none vditor-panel-ir'
       panel.style.cssText = 'position:fixed;display:none;z-index:10000;background:#252526;'
 
-      for (const btn of buttonDefs) {
+      for (const btn of BUTTON_DEFS) {
         const button = document.createElement('button')
         button.type = 'button'
         button.setAttribute('aria-label', `${btn.label}<${updateHotkeyTip(btn.hotkey)}>`)
@@ -81,8 +78,8 @@ export function fixTableIr() {
 
       $(panel).on('click', '.vditor-icon', (e) => {
         const type = $(e.target).closest('[data-type]').attr('data-type')
-        if (!type || !handleMap[type]) return
-        const k = handleMap[type][
+        if (!type || !HANDLE_MAP[type]) return
+        const k = HANDLE_MAP[type][
           navigator.platform.toLowerCase().includes('mac') ? 1 : 0
         ]
         disableVscodeHotkeys = true
@@ -114,19 +111,16 @@ export function fixTableIr() {
   })
 
   eventRoot.addEventListener('scroll', () => {
-    const tablePanel = document.getElementById(tablePanelId)
-    if (tablePanel) {
-      const panel = tablePanel.querySelector('.vditor-panel') as HTMLElement
-      if (panel) panel.style.display = 'none'
-    }
+    const panel = insertTablePanel()
+    if (panel) panel.style.display = 'none'
   })
 
-  const stopEvent = (e: KeyboardEvent) => {
-    if (disableVscodeHotkeys) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
+  for (const evt of ['keydown', 'keyup'] as const) {
+    eventRoot.addEventListener(evt, (e: KeyboardEvent) => {
+      if (disableVscodeHotkeys) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    })
   }
-  eventRoot.addEventListener('keydown', stopEvent)
-  eventRoot.addEventListener('keyup', stopEvent)
 }

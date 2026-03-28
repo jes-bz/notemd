@@ -7,25 +7,6 @@ import {
   handleToolbarClick,
   saveVditorOptions,
 } from './utils'
-
-function deepMerge(target: any, ...sources: any[]): any {
-  for (const source of sources) {
-    if (!source) continue
-    for (const key of Object.keys(source)) {
-      if (
-        source[key] &&
-        typeof source[key] === 'object' &&
-        !Array.isArray(source[key])
-      ) {
-        target[key] = deepMerge(target[key] || {}, source[key])
-      } else {
-        target[key] = source[key]
-      }
-    }
-  }
-  return target
-}
-
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { lang } from './lang'
@@ -37,13 +18,15 @@ const BLOCK_SAMPLE = 25
 const BLOCK_TAG_RE = /^(P|H[1-6]|LI|BLOCKQUOTE|PRE|OL|UL|HR|TABLE|DL|DD|DT|FIGURE|DIV)$/
 const isBlockEl = (el: Element) => BLOCK_TAG_RE.test(el.tagName)
 
-function initVditor(msg: any) {
-  let inputTimer
-  const defaultOptions = deepMerge({}, msg.options, {
+function initVditor(msg: any): void {
+  let inputTimer: ReturnType<typeof setTimeout> | undefined
+  const defaultOptions = {
+    ...msg.options,
     preview: {
+      ...msg.options?.preview,
       math: { inlineDigit: true },
     },
-  })
+  }
 
   const isDark = msg.theme === 'dark'
   if (msg.theme) {
@@ -75,7 +58,7 @@ function initVditor(msg: any) {
       fixPanelHover()
     },
     input() {
-      inputTimer && clearTimeout(inputTimer)
+      clearTimeout(inputTimer)
       inputTimer = setTimeout(() => {
         vscode.postMessage({ command: 'edit', content: vditor.getValue() })
       }, 100)
@@ -187,7 +170,6 @@ function getCursorTextOffset(): number {
 
   const md = vditor.getValue()
 
-  // Check if cursor is inside a table cell
   let cellNode: HTMLElement | null = null
   let tableNode: HTMLElement | null = null
   let ancestor: Node | null = cursorNode
@@ -215,7 +197,6 @@ function getCursorTextOffset(): number {
     if (tableOffset !== null) return tableOffset
   }
 
-  // Walk up to find containing block
   let block: HTMLElement | null = null
   let node: Node | null = cursorNode
   while (node && node !== editor) {
