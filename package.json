@@ -4,6 +4,7 @@
   "icon": "logo.png",
   "description": "A markdown note-taking environment with WYSIWYG editing.",
   "version": "0.0.1",
+  "publisher": "jesbz",
   "repository": {
     "type": "git",
     "url": "https://github.com/jes-bz/notemd.git"
@@ -22,6 +23,7 @@
   ],
   "activationEvents": [
     "onCommand:notemd.openEditor",
+    "onCommand:notemd.openDailyNote",
     "onWebviewPanel:notemd",
     "onLanguage:markdown",
     "onCustomEditor:notemd.customEditor"
@@ -37,6 +39,11 @@
       {
         "command": "notemd.revealInSource",
         "title": "Reveal in Source",
+        "category": "notemd"
+      },
+      {
+        "command": "notemd.openDailyNote",
+        "title": "Open Today's Daily Note",
         "category": "notemd"
       }
     ],
@@ -87,6 +94,16 @@
         "notemd.customCss": {
           "type": "string",
           "default": ""
+        },
+        "notemd.dailyNoteFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Folder for daily notes, relative to workspace root. Leave empty to use workspace root."
+        },
+        "notemd.dailyNoteFormat": {
+          "type": "string",
+          "default": "yyyy-MM-dd",
+          "description": "Date format for daily note filenames. Uses date-fns format syntax (e.g., yyyy-MM-dd, yyyy/MMMM/yyyy-MM-dd)."
         }
       }
     },
@@ -109,11 +126,9 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
-    "date-fns": "^2.21.1",
     "esbuild": "^0.25.0",
     "jquery": "^3.6.0",
     "jquery-confirm": "^3.3.4",
-    "lodash": "^4.17.21",
     "typescript": "^5.7.0",
     "vditor": "^3.8.4"
   }

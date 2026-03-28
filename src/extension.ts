@@ -3,6 +3,28 @@ import * as NodePath from 'path'
 
 const VDITOR_OPTIONS_KEY = 'vditor.options'
 
+const output = vscode.window.createOutputChannel('notemd')
+
+function formatDate(date: Date, fmt: string): string {
+  const tokens: Record<string, string> = {
+    yyyy: String(date.getFullYear()),
+    yy: String(date.getFullYear()).slice(-2),
+    MM: String(date.getMonth() + 1).padStart(2, '0'),
+    MMMM: date.toLocaleString('en', { month: 'long' }),
+    MMM: date.toLocaleString('en', { month: 'short' }),
+    dd: String(date.getDate()).padStart(2, '0'),
+    HH: String(date.getHours()).padStart(2, '0'),
+    mm: String(date.getMinutes()).padStart(2, '0'),
+    ss: String(date.getSeconds()).padStart(2, '0'),
+  }
+  let result = fmt
+  // Replace longest tokens first to avoid partial matches
+  for (const key of Object.keys(tokens).sort((a, b) => b.length - a.length)) {
+    result = result.replace(key, tokens[key])
+  }
+  return result
+}
+
 function showError(msg: string) {
   vscode.window.showErrorMessage(`[notemd] ${msg}`)
 }
@@ -126,14 +148,20 @@ async function handleUploadMessage(
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  output.appendLine('notemd activating...')
+  output.appendLine(`Extension path: ${context.extensionUri.fsPath}`)
+  context.subscriptions.push(output)
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'notemd.openEditor',
       (uri?: vscode.Uri) => {
+        output.appendLine('Command: notemd.openEditor')
         EditorPanel.createOrShow(context, uri)
       }
     )
   )
+  output.appendLine('Registered: notemd.openEditor')
 
   // Track active custom editor webviews
   const activeWebviews = new Map<vscode.WebviewPanel, vscode.TextDocument>()
@@ -193,6 +221,40 @@ export function activate(context: vscode.ExtensionContext) {
       )
     })
   )
+  output.appendLine('Registered: notemd.revealInSource')
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('notemd.openDailyNote', async () => {
+      const workspaceFolders = vscode.workspace.workspaceFolders
+      if (!workspaceFolders) {
+        showError('No workspace folder open')
+        return
+      }
+      const workspaceRoot = workspaceFolders[0].uri.fsPath
+      const config = vscode.workspace.getConfiguration('notemd')
+      const folder = config.get<string>('dailyNoteFolder') || ''
+      const dateFormat = config.get<string>('dailyNoteFormat') || 'yyyy-MM-dd'
+
+      const filename = formatDate(new Date(), dateFormat) + '.md'
+      const dir = folder
+        ? NodePath.resolve(workspaceRoot, folder)
+        : workspaceRoot
+      const filePath = NodePath.join(dir, filename)
+      const uri = vscode.Uri.file(filePath)
+
+      try {
+        await vscode.workspace.fs.stat(uri)
+      } catch {
+        await vscode.workspace.fs.createDirectory(
+          vscode.Uri.file(NodePath.dirname(filePath))
+        )
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(''))
+      }
+
+      EditorPanel.createOrShow(context, uri)
+    })
+  )
+  output.appendLine('Registered: notemd.openDailyNote')
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
@@ -204,8 +266,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
     )
   )
+  output.appendLine('Registered: notemd.customEditor')
 
   context.globalState.setKeysForSync([VDITOR_OPTIONS_KEY])
+  output.appendLine('notemd activated successfully')
 }
 
 class EditorPanel {
