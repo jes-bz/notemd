@@ -3,7 +3,7 @@
   "displayName": "Notemd",
   "icon": "logo.png",
   "description": "A markdown note-taking environment with WYSIWYG editing.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "jesbz",
   "repository": {
     "type": "git",
@@ -122,7 +122,6 @@
     "package": "npm run build && npx @vscode/vsce package"
   },
   "devDependencies": {
-    "@testing-library/user-event": "^13.1.5",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",

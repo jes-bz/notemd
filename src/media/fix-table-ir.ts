@@ -1,4 +1,4 @@
-import { keyboard } from '@testing-library/user-event/dist/keyboard'
+import { keyboard } from './keyboard'
 import $ from 'jquery'
 import { updateHotkeyTip } from 'vditor/src/ts/util/compatibility'
 
@@ -30,16 +30,16 @@ const BUTTON_DEFS = [
   { type: 'deleteColumn', label: 'Delete column', hotkey: '⇧⌘-', icon: '#vditor-icon-delete-column' },
 ]
 
-const HANDLE_MAP: Record<string, string[]> = {
-  left: ['{ctrl}{shift}l{/shift}{/ctrl}', '{meta}{shift}l{/shift}{/meta}'],
-  center: ['{ctrl}{shift}c{/shift}{/ctrl}', '{meta}{shift}c{/shift}{/meta}'],
-  right: ['{ctrl}{shift}r{/shift}{/ctrl}', '{meta}{shift}r{/shift}{/meta}'],
-  insertRowA: ['{ctrl}{shift}f{/shift}{/ctrl}', '{meta}{shift}f{/shift}{/meta}'],
-  insertRowB: ['{ctrl}={/ctrl}', '{meta}={/meta}'],
-  deleteRow: ['{ctrl}-{/ctrl}', '{meta}-{/meta}'],
-  insertColumnL: ['{ctrl}{shift}g{/shift}{/ctrl}', '{meta}{shift}g{/shift}{/meta}'],
-  insertColumnR: ['{ctrl}{shift}+{/shift}{/ctrl}', '{meta}{shift}={/shift}{/meta}'],
-  deleteColumn: ['{ctrl}{shift}_{/shift}{/ctrl}', '{meta}{shift}-{/shift}{/meta}'],
+const HANDLE_MAP: Record<string, [string, boolean]> = {
+  left: ['l', true],
+  center: ['c', true],
+  right: ['r', true],
+  insertRowA: ['f', true],
+  insertRowB: ['=', false],
+  deleteRow: ['-', false],
+  insertColumnL: ['g', true],
+  insertColumnR: ['=', true],
+  deleteColumn: ['-', true],
 }
 
 export function fixTableIr(): void {
@@ -79,9 +79,11 @@ export function fixTableIr(): void {
       $(panel).on('click', '.vditor-icon', (e) => {
         const type = $(e.target).closest('[data-type]').attr('data-type')
         if (!type || !HANDLE_MAP[type]) return
-        const k = HANDLE_MAP[type][
-          navigator.platform.toLowerCase().includes('mac') ? 1 : 0
-        ]
+        const [key, shift] = HANDLE_MAP[type]
+        const mod = navigator.platform.toLowerCase().includes('mac') ? 'meta' : 'ctrl'
+        const k = shift
+          ? `{${mod}}{shift}${key}{/shift}{/${mod}}`
+          : `{${mod}}${key}{/${mod}}`
         disableVscodeHotkeys = true
         Promise.resolve(
           keyboard(k, {
