@@ -40,7 +40,7 @@ function initVditor(msg: any): void {
     window.vditor = null
   }
 
-  window.vditor = new Vditor('app', {
+  const vditorOpts: Record<string, any> = {
     width: '100%',
     height: '100%',
     minHeight: '100%',
@@ -51,37 +51,49 @@ function initVditor(msg: any): void {
     toolbar,
     toolbarConfig: { pin: true },
     ...defaultOptions,
-    after() {
-      fixDarkTheme()
-      handleToolbarClick()
-      fixTableIr()
-      fixPanelHover()
+  }
+
+  const localLute = (window as any).__notemd_lute_path
+  if (localLute) {
+    vditorOpts._lutePath = localLute
+  }
+
+  vditorOpts.after = function() {
+    fixDarkTheme()
+    handleToolbarClick()
+    fixTableIr()
+    fixPanelHover()
+    if (pendingDiffChanges) {
+      renderDiffMarkers(pendingDiffChanges)
+      pendingDiffChanges = null
+    }
+  }
+  vditorOpts.input = function() {
+    clearTimeout(inputTimer)
+    inputTimer = setTimeout(() => {
+      vscode.postMessage({ command: 'edit', content: vditor.getValue() })
+    }, 100)
+  }
+  vditorOpts.upload = {
+    url: '/fuzzy',
+    async handler(files: File[]) {
+      const fileInfos = await Promise.all(
+        files.map(async (f) => ({
+          base64: await fileToBase64(f),
+          name: `${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}_${f.name}`.replace(
+            /[^\w-_.]+/,
+            '_'
+          ),
+        }))
+      )
+      vscode.postMessage({
+        command: 'upload',
+        files: fileInfos,
+      })
     },
-    input() {
-      clearTimeout(inputTimer)
-      inputTimer = setTimeout(() => {
-        vscode.postMessage({ command: 'edit', content: vditor.getValue() })
-      }, 100)
-    },
-    upload: {
-      url: '/fuzzy',
-      async handler(files) {
-        const fileInfos = await Promise.all(
-          files.map(async (f) => ({
-            base64: await fileToBase64(f),
-            name: `${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}_${f.name}`.replace(
-              /[^\w-_.]+/,
-              '_'
-            ),
-          }))
-        )
-        vscode.postMessage({
-          command: 'upload',
-          files: fileInfos,
-        })
-      },
-    },
-  })
+  }
+
+  window.vditor = new Vditor('app', vditorOpts as any)
 }
 
 function getTableOffset(
@@ -228,11 +240,116 @@ function getCursorTextOffset(): number {
   )
 }
 
+interface DiffChange {
+  startLine: number
+  endLine: number
+  type: 'added' | 'removed' | 'modified'
+}
+
+let pendingDiffChanges: DiffChange[] | null = null
+
+function clearDiffMarkers(): void {
+  document.querySelectorAll('.notemd-diff-marker').forEach((el) => el.remove())
+}
+
+function findEditorElement(): HTMLElement | null {
+  if (window.vditor?.vditor) {
+    const mode = vditor.vditor.currentMode || 'ir'
+    const modeEl = vditor.vditor[mode]?.element as HTMLElement | undefined
+    if (modeEl && (modeEl.children.length > 0 || modeEl.textContent)) return modeEl
+  }
+
+  const candidates = document.querySelectorAll('[contenteditable="true"]')
+  for (const el of Array.from(candidates)) {
+    if (el instanceof HTMLElement && el.children.length > 0) return el
+  }
+
+  return null
+}
+
+function renderDiffMarkers(changes: DiffChange[]): void {
+  clearDiffMarkers()
+  if (changes.length === 0) return
+
+  const editor = findEditorElement()
+  if (!editor || editor.children.length === 0) {
+    pendingDiffChanges = changes
+    return
+  }
+
+  const md = window.vditor ? vditor.getValue() : (editor.textContent || '')
+  const blocks: HTMLElement[] = []
+
+  for (const child of Array.from(editor.children)) {
+    if (child instanceof HTMLElement) {
+      if (child.classList.contains('notemd-diff-marker')) continue
+      if (isBlockEl(child)) blocks.push(child)
+    }
+  }
+
+  if (blocks.length === 0) {
+    pendingDiffChanges = changes
+    return
+  }
+
+  const DIFF_PRIORITY: Record<string, number> = { removed: 3, modified: 2, added: 1 }
+  let currentLine = 0
+
+  for (const block of blocks) {
+    const blockText = (block.textContent || '').trim()
+    if (!blockText) {
+      currentLine++
+      continue
+    }
+
+    const sample = blockText.substring(0, BLOCK_SAMPLE)
+    const matchIdx = md.indexOf(sample)
+
+    let blockStartLine = currentLine
+    let blockLineCount = 1
+
+    if (matchIdx >= 0) {
+      blockStartLine = md.substring(0, matchIdx).split('\n').length - 1
+      const blockEndIdx = matchIdx + blockText.length
+      const nextNewline = md.indexOf('\n', blockEndIdx)
+      const endIdx = nextNewline >= 0 ? nextNewline : md.length
+      blockLineCount = md.substring(0, endIdx).split('\n').length - blockStartLine
+      currentLine = blockStartLine + blockLineCount
+    } else {
+      currentLine++
+    }
+
+    let bestType: string | null = null
+    let bestPriority = -1
+
+    for (const change of changes) {
+      if (change.startLine >= blockStartLine + blockLineCount) continue
+      if (change.endLine <= blockStartLine) continue
+
+      const priority = DIFF_PRIORITY[change.type] ?? 0
+      if (priority > bestPriority) {
+        bestPriority = priority
+        bestType = change.type
+      }
+    }
+
+    if (bestType) {
+      const marker = document.createElement('div')
+      marker.className = `notemd-diff-marker notemd-diff-${bestType}`
+      marker.style.top = block.offsetTop + 'px'
+      marker.style.height = block.offsetHeight + 'px'
+      editor.appendChild(marker)
+    }
+  }
+}
+
 window.addEventListener('message', (e) => {
   const msg = e.data
   switch (msg.command) {
     case 'update': {
       if (msg.type === 'init') {
+        clearDiffMarkers()
+        pendingDiffChanges = null
         document.body.setAttribute(
           'data-use-vscode-theme-color',
           msg.options?.useVscodeThemeColor ? '1' : '0'
@@ -275,10 +392,22 @@ window.addEventListener('message', (e) => {
       })
       break
     }
+    case 'diff-info': {
+      renderDiffMarkers(msg.changes || [])
+      break
+    }
   }
 })
 
 fixLinkClick()
 fixCut()
+
+const diffObserver = new MutationObserver(() => {
+  if (pendingDiffChanges && findEditorElement()?.children?.length) {
+    renderDiffMarkers(pendingDiffChanges)
+    pendingDiffChanges = null
+  }
+})
+diffObserver.observe(document.body, { childList: true, subtree: true })
 
 vscode.postMessage({ command: 'ready' })

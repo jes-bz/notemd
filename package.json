@@ -117,7 +117,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p ./ && esbuild ./src/media/main.ts --bundle --minify --sourcemap --outfile=./media/dist/main.js",
+    "build": "tsc -p ./ && esbuild ./src/media/main.ts --bundle --minify --sourcemap --outfile=./media/dist/main.js && cp node_modules/vditor/dist/js/lute/lute.min.js media/dist/",
     "compile": "tsc -p ./",
     "package": "npm run build && npx @vscode/vsce package"
   },
@@ -130,5 +130,8 @@
     "jquery-confirm": "^3.3.4",
     "typescript": "^5.7.0",
     "vditor": "^3.8.4"
+  },
+  "dependencies": {
+    "diff": "^8.0.4"
   }
 }

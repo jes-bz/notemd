@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import * as NodePath from 'path'
+import { diffLines } from 'diff'
 
 const VDITOR_OPTIONS_KEY = 'vditor.options'
 
@@ -28,6 +29,88 @@ function showError(msg: string): void {
   vscode.window.showErrorMessage(`[notemd] ${msg}`)
 }
 
+interface DiffChange {
+  startLine: number
+  endLine: number
+  type: 'added' | 'removed' | 'modified'
+}
+
+const MAX_DIFF_CONTENT_SIZE = 1_000_000
+
+async function getHeadContent(fsPath: string): Promise<string | null> {
+  try {
+    const gitExtension = vscode.extensions.getExtension('vscode.git')
+    const ext = gitExtension?.isActive
+      ? gitExtension.exports
+      : gitExtension ? await gitExtension.activate() : undefined
+    const git = ext?.getAPI(1)
+    const repo = git?.repositories?.find((r: any) =>
+      fsPath.startsWith(r.rootUri.fsPath + NodePath.sep) ||
+      fsPath.startsWith(r.rootUri.fsPath)
+    )
+
+    if (!gitExtension || !ext || !git || !repo) return null
+
+    const relativePath = NodePath.relative(repo.rootUri.fsPath, fsPath)
+    const content = await repo.show('HEAD', relativePath)
+    if (typeof content === 'string' && content.length > 0) return content
+    return null
+  } catch {
+    return null
+  }
+}
+
+function computeDiffChanges(headContent: string, currentContent: string): DiffChange[] {
+  const changes: DiffChange[] = []
+  const diffResult = diffLines(headContent, currentContent)
+  let currentLine = 0
+
+  for (const part of diffResult) {
+    const lineCount = part.value.split('\n').length - 1
+
+    if (part.added) {
+      changes.push({ startLine: currentLine, endLine: currentLine + lineCount, type: 'added' })
+      currentLine += lineCount
+    } else if (part.removed) {
+      if (currentLine > 0) {
+        changes.push({ startLine: currentLine - 1, endLine: currentLine, type: 'modified' })
+      } else if (diffResult.length > 1) {
+        changes.push({ startLine: 0, endLine: 1, type: 'modified' })
+      }
+    } else {
+      currentLine += lineCount
+    }
+  }
+
+  return changes
+}
+
+async function computeDiffInfo(fsPath: string, currentContent: string): Promise<DiffChange[]> {
+  if (currentContent.length > MAX_DIFF_CONTENT_SIZE) return []
+  const headContent = await getHeadContent(fsPath)
+  if (headContent === null) return []
+  return computeDiffChanges(headContent, currentContent)
+}
+
+function createDiffScheduler(webview: vscode.Webview, fsPath: string) {
+  let diffTimer: ReturnType<typeof setTimeout> | undefined
+  let lastDiffContent: string | undefined
+
+  return (content: string) => {
+    clearTimeout(diffTimer)
+    diffTimer = setTimeout(async () => {
+      if (content === lastDiffContent) return
+      lastDiffContent = content
+      try {
+        const changes = await computeDiffInfo(fsPath, content)
+        webview.postMessage({ command: 'diff-info', changes })
+      } catch {
+        // diff computation failed
+      }
+    }, 300)
+  }
+}
+
 function getWebviewRoots(): vscode.WebviewOptions & vscode.WebviewPanelOptions {
   return {
     enableScripts: true,
@@ -54,6 +137,7 @@ function buildWebviewHtml(
     NodePath.dirname(webview.asWebviewUri(vscode.Uri.file(fsPath)).toString()) + '/'
   const mainJs = toUri('media/dist/main.js')
   const mainCss = toUri('media/dist/main.css')
+  const luteJs = toUri('media/dist/lute.min.js')
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -64,6 +148,7 @@ function buildWebviewHtml(
 <link href="${mainCss}" rel="stylesheet">
 <title>notemd</title>
 <style>${customCss}</style>
+<script>window.__notemd_lute_path="${luteJs}"</script>
 </head>
 <body>
 <div id="app"></div>
@@ -394,6 +479,8 @@ class EditorPanel {
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables)
 
+    const scheduleDiffInfo = createDiffScheduler(this.panel.webview, this.uri.fsPath)
+
     let textEditTimer: ReturnType<typeof setTimeout> | undefined
     vscode.workspace.onDidCloseTextDocument((e) => {
       if (e.fileName === this.uri.fsPath) this.dispose()
@@ -410,6 +497,7 @@ class EditorPanel {
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.fileName !== this.document.fileName) return
       if (e.document.getText() === this.lastWebviewContent) return
+      scheduleDiffInfo(e.document.getText())
       textEditTimer && clearTimeout(textEditTimer)
       textEditTimer = setTimeout(() => {
         this.postMessage()
@@ -424,7 +512,10 @@ class EditorPanel {
         uri: this.uri,
         fsPath: this.uri.fsPath,
         webview: this.panel.webview,
-        postInit: (msg) => this.postMessage(msg),
+        postInit: (msg) => {
+          this.postMessage(msg)
+          scheduleDiffInfo(this.document.getText())
+        },
         onEdit: async (content) => {
           if (this.panel.active) {
             this.lastWebviewContent = content
@@ -432,7 +523,10 @@ class EditorPanel {
             this.updateEditTitle()
           }
         },
-        onSaveDone: () => this.updateEditTitle(),
+        onSaveDone: () => {
+          this.updateEditTitle()
+          scheduleDiffInfo(this.document.getText())
+        },
       }),
       null,
       this.disposables
@@ -474,7 +568,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly activeWebviews: Map<vscode.WebviewPanel, vscode.TextDocument>
-  ) {}
+  ) { }
 
   public async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -495,6 +589,8 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
     const disposables: vscode.Disposable[] = []
     let isEditing = false
     let lastWebviewContent = ''
+
+    const scheduleDiffInfo = createDiffScheduler(webviewPanel.webview, uri.fsPath)
 
     const updateEditTitle = () => {
       const isDirty = document.isDirty
@@ -518,6 +614,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.fileName !== document.fileName) return
       if (e.document.getText() === lastWebviewContent) return
+      scheduleDiffInfo(e.document.getText())
       updateWebview()
       updateEditTitle()
     }, null, disposables)
@@ -529,12 +626,14 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
         uri,
         fsPath: uri.fsPath,
         webview: webviewPanel.webview,
-        postInit: (msg) =>
+        postInit: (msg) => {
           webviewPanel.webview.postMessage({
             command: 'update',
             content: document.getText(),
             ...msg,
-          }),
+          })
+          scheduleDiffInfo(document.getText())
+        },
         onEdit: async (content) => {
           if (webviewPanel.active) {
             lastWebviewContent = content
@@ -542,7 +641,10 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
             updateEditTitle()
           }
         },
-        onSaveDone: updateEditTitle,
+        onSaveDone: () => {
+          updateEditTitle()
+          scheduleDiffInfo(document.getText())
+        },
       }),
       null,
       disposables

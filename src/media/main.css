@@ -27,7 +27,8 @@ body[data-use-vscode-theme-color="1"] .vditor {
 .vditor-toolbar.vditor-toolbar--pin {
   padding-left: 35px!important;
 }
-.vditor-ir pre.vditor-reset {
+.vditor-ir pre.vditor-reset,
+.vditor-wysiwyg pre.vditor-reset {
   position: relative;
 }
 .vditor-panel {
@@ -70,4 +71,21 @@ body[data-use-vscode-theme-color="1"] .vditor {
 }
 .jconfirm-buttons button {
   text-transform: none!important;
+}
+.notemd-diff-marker {
+  position: absolute;
+  left: 0;
+  width: 5px;
+  z-index: 10;
+  pointer-events: none;
+  border-radius: 2px;
+}
+.notemd-diff-added {
+  background-color: var(--vscode-editorGutter-addedBackground, rgba(40, 167, 69, 0.8)) !important;
+}
+.notemd-diff-modified {
+  background-color: var(--vscode-editorGutter-modifiedBackground, rgba(0, 122, 204, 0.8)) !important;
+}
+.notemd-diff-removed {
+  background-color: var(--vscode-editorGutter-deletedBackground, rgba(255, 0, 0, 0.8)) !important;
 }
