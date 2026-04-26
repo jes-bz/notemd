@@ -3,7 +3,7 @@
   "displayName": "Notemd",
   "icon": "logo.png",
   "description": "A markdown note-taking environment with WYSIWYG editing.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "jesbz",
   "repository": {
     "type": "git",
@@ -24,6 +24,9 @@
   "activationEvents": [
     "onCommand:notemd.openEditor",
     "onCommand:notemd.openDailyNote",
+    "onCommand:notemd.reindexOcr",
+    "onCommand:notemd.reindexOcrAll",
+    "onCommand:notemd.setOcrApiKey",
     "onWebviewPanel:notemd",
     "onLanguage:markdown",
     "onCustomEditor:notemd.customEditor"
@@ -44,6 +47,21 @@
       {
         "command": "notemd.openDailyNote",
         "title": "Open Today's Daily Note",
+        "category": "notemd"
+      },
+      {
+        "command": "notemd.reindexOcr",
+        "title": "Reindex OCR (current file)",
+        "category": "notemd"
+      },
+      {
+        "command": "notemd.reindexOcrAll",
+        "title": "Reindex OCR (all markdown files)",
+        "category": "notemd"
+      },
+      {
+        "command": "notemd.setOcrApiKey",
+        "title": "Set OCR API Key",
         "category": "notemd"
       }
     ],
@@ -104,6 +122,21 @@
           "type": "string",
           "default": "yyyy-MM-dd",
           "description": "Date format for daily note filenames. Uses date-fns format syntax (e.g., yyyy-MM-dd, yyyy/MMMM/yyyy-MM-dd)."
+        },
+        "notemd.ocr.endpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI-compatible API base URL for OCR. Example: https://api.openai.com/v1"
+        },
+        "notemd.ocr.model": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "Vision-capable model name used for OCR."
+        },
+        "notemd.ocr.prompt": {
+          "type": "string",
+          "default": "Extract all text from this image exactly as it appears. Return only the raw text with no commentary, no markdown, no quoting. If the image contains no text, return an empty string.",
+          "description": "Prompt sent with each image to the OCR model."
         }
       }
     },

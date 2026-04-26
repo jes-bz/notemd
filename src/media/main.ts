@@ -366,8 +366,17 @@ window.addEventListener('message', (e) => {
       }
       break
     }
+    case 'patch-alt': {
+      const current = vditor.getValue()
+      const target = `![](${msg.path})`
+      if (current.includes(target)) {
+        vditor.setValue(current.replace(target, `![${msg.alt}](${msg.path})`))
+      }
+      break
+    }
     case 'uploaded': {
-      msg.files.forEach((f: string) => {
+      msg.files.forEach((entry: string | { path: string }) => {
+        const f = typeof entry === 'string' ? entry : entry.path
         if (f.endsWith('.wav')) {
           vditor.insertValue(
             `\n\n<audio controls="controls" src="${f}"></audio>\n\n`

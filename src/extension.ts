@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import * as NodePath from 'path'
 import { diffLines } from 'diff'
+import { getOcrConfig, ocrImageFile, getImageMime, escapeAlt, resolveLocalImage, OcrConfig } from './ocr'
 
 const VDITOR_OPTIONS_KEY = 'vditor.options'
 
@@ -197,11 +198,76 @@ function getAssetsFolder(uri: vscode.Uri): string {
   return NodePath.resolve(NodePath.dirname(uri.fsPath), imageSaveFolder)
 }
 
+// Escape relPath for use in a regex literal
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function ocrAndPatchUpload(
+  document: vscode.TextDocument,
+  absPath: string,
+  relPath: string,
+  cfg: OcrConfig,
+  webview: vscode.Webview,
+  setLastWebviewContent: (s: string) => void
+): Promise<void> {
+  // Pattern matches only empty-alt references to this exact path.
+  // Re-evaluated after OCR so position is always fresh regardless of user edits.
+  const emptyAltRe = new RegExp(`!\\[\\]\\(${escapeRegex(relPath)}\\)`)
+
+  const deadline = Date.now() + 15000
+  while (Date.now() < deadline && !emptyAltRe.test(document.getText())) {
+    await new Promise((r) => setTimeout(r, 250))
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `notemd: OCR ${NodePath.basename(absPath)}`,
+    },
+    async () => {
+      let alt = ''
+      try {
+        alt = await ocrImageFile(absPath, cfg)
+      } catch (err: any) {
+        console.error(err)
+        showError(`OCR failed for ${NodePath.basename(absPath)}: ${err?.message || err}`)
+        return
+      }
+      if (!alt) return
+      const escaped = escapeAlt(alt)
+
+      // Re-read doc fresh after OCR — user may have moved/edited content above
+      const text = document.getText()
+      const match = emptyAltRe.exec(text)
+      if (!match) return  // user manually filled alt or deleted the image — skip
+
+      // Build replacement: insert alt into the empty brackets
+      const matchStart = match.index
+      const altInsertPos = matchStart + 2  // right after ![
+      const newText = text.slice(0, altInsertPos) + escaped + text.slice(altInsertPos)
+
+      // Set before applyEdit so onDidChangeTextDocument skips full webview re-render.
+      // These two lines are synchronous — no user edit can slip between them.
+      setLastWebviewContent(newText)
+      const edit = new vscode.WorkspaceEdit()
+      edit.insert(document.uri, document.positionAt(altInsertPos), escaped)
+      await vscode.workspace.applyEdit(edit)
+
+      // Patch Vditor in-place — avoids setValue() re-render interrupting user typing
+      webview.postMessage({ command: 'patch-alt', path: relPath, alt: escaped })
+    }
+  )
+}
+
 async function handleUploadMessage(
   files: any[],
   uri: vscode.Uri,
   fsPath: string,
-  webview: vscode.Webview
+  webview: vscode.Webview,
+  document: vscode.TextDocument,
+  setLastWebviewContent: (s: string) => void,
+  context: vscode.ExtensionContext
 ): Promise<void> {
   const assetsFolder = getAssetsFolder(uri)
   try {
@@ -220,13 +286,89 @@ async function handleUploadMessage(
       )
     })
   )
-  const relativePaths = files.map((f: any) =>
-    NodePath.relative(
+  const entries = files.map((f: any) => {
+    const absPath = NodePath.join(assetsFolder, f.name)
+    const relPath = NodePath.relative(
       NodePath.dirname(fsPath),
-      NodePath.join(assetsFolder, f.name)
+      absPath
     ).replace(/\\/g, '/')
-  )
-  webview.postMessage({ command: 'uploaded', files: relativePaths })
+    return { absPath, relPath, name: f.name }
+  })
+  webview.postMessage({
+    command: 'uploaded',
+    files: entries.map((e) => ({ path: e.relPath })),
+  })
+  const cfg = await getOcrConfig(context)
+  if (!cfg.apiKey) return
+  for (const e of entries) {
+    if (!getImageMime(e.absPath)) continue
+    void ocrAndPatchUpload(document, e.absPath, e.relPath, cfg, webview, setLastWebviewContent)
+  }
+}
+
+interface ImageRef {
+  alt: string
+  href: string
+  altStart: number
+  altEnd: number
+}
+
+function findImageRefs(text: string): ImageRef[] {
+  const refs: ImageRef[] = []
+  const re = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const altStart = m.index + 2
+    const altEnd = altStart + m[1].length
+    refs.push({ alt: m[1], href: m[2], altStart, altEnd })
+  }
+  return refs
+}
+
+async function ocrDocument(
+  document: vscode.TextDocument,
+  context: vscode.ExtensionContext,
+  options?: { overwrite?: boolean; progress?: vscode.Progress<{ message?: string; increment?: number }> }
+): Promise<number> {
+  if (!/\.(md|markdown)$/i.test(document.fileName)) return 0
+  const cfg = await getOcrConfig(context)
+  if (!cfg.apiKey) {
+    showError('notemd.ocr.apiKey not configured (use "Notemd: Set OCR API Key" command)')
+    return 0
+  }
+  const text = document.getText()
+  const refs = findImageRefs(text)
+  const targets = refs.filter((r) => options?.overwrite || !r.alt)
+  const locals: { ref: ImageRef; abs: string }[] = []
+  for (const r of targets) {
+    const abs = await resolveLocalImage(document.uri.fsPath, r.href)
+    if (abs) locals.push({ ref: r, abs })
+  }
+  if (locals.length === 0) return 0
+
+  const results: { ref: ImageRef; alt: string }[] = []
+  for (let i = 0; i < locals.length; i++) {
+    const { ref, abs } = locals[i]
+    options?.progress?.report({ message: `${NodePath.basename(abs)} (${i + 1}/${locals.length})` })
+    try {
+      const alt = await ocrImageFile(abs, cfg)
+      results.push({ ref, alt })
+    } catch (err: any) {
+      console.error(err)
+      showError(`OCR failed for ${NodePath.basename(abs)}: ${err?.message || err}`)
+      results.push({ ref, alt: '' })
+    }
+  }
+
+  const edit = new vscode.WorkspaceEdit()
+  for (const { ref, alt } of results) {
+    const start = document.positionAt(ref.altStart)
+    const end = document.positionAt(ref.altEnd)
+    edit.replace(document.uri, new vscode.Range(start, end), escapeAlt(alt))
+  }
+  await vscode.workspace.applyEdit(edit)
+  await document.save()
+  return results.length
 }
 
 function createMessageHandler(deps: {
@@ -238,6 +380,7 @@ function createMessageHandler(deps: {
   postInit: (msg: any) => void
   onEdit: (content: string) => Promise<void>
   onSaveDone: () => void
+  setLastWebviewContent: (s: string) => void
 }) {
   return async (message: any) => {
     switch (message.command) {
@@ -273,7 +416,10 @@ function createMessageHandler(deps: {
           message.files,
           deps.uri,
           deps.fsPath,
-          deps.webview
+          deps.webview,
+          deps.document,
+          deps.setLastWebviewContent,
+          deps.context
         )
         break
       case 'open-link': {
@@ -407,6 +553,65 @@ export function activate(context: vscode.ExtensionContext): void {
   )
   output.appendLine('Registered: notemd.customEditor')
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('notemd.reindexOcr', async () => {
+      const doc = vscode.window.activeTextEditor?.document
+        || [...activeWebviews.values()][0]
+        || EditorPanel.currentPanel?.document
+      if (!doc) {
+        showError('No active markdown document')
+        return
+      }
+      const count = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'notemd: OCR reindex' },
+        (progress) => ocrDocument(doc, context, { progress })
+      )
+      vscode.window.showInformationMessage(`notemd: OCR updated ${count} image(s)`)
+    })
+  )
+  output.appendLine('Registered: notemd.reindexOcr')
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('notemd.reindexOcrAll', async () => {
+      const confirm = await vscode.window.showWarningMessage(
+        'Reindex OCR for all markdown images in workspace? This will overwrite existing alt text.',
+        { modal: true },
+        'Reindex All'
+      )
+      if (confirm !== 'Reindex All') return
+      const files = await vscode.workspace.findFiles('**/*.{md,markdown}', '**/node_modules/**')
+      let total = 0
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'notemd: OCR reindex all', cancellable: true },
+        async (progress, token) => {
+          for (let i = 0; i < files.length; i++) {
+            if (token.isCancellationRequested) break
+            progress.report({ message: `${NodePath.basename(files[i].fsPath)} (${i + 1}/${files.length})` })
+            const doc = await vscode.workspace.openTextDocument(files[i])
+            total += await ocrDocument(doc, context, { overwrite: true, progress })
+          }
+        }
+      )
+      vscode.window.showInformationMessage(`notemd: OCR reindexed ${total} image(s) across ${files.length} file(s)`)
+    })
+  )
+  output.appendLine('Registered: notemd.reindexOcrAll')
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('notemd.setOcrApiKey', async () => {
+      const key = await vscode.window.showInputBox({
+        prompt: 'Enter API Key for Notemd OCR',
+        password: true,
+        ignoreFocusOut: true,
+      })
+      if (key !== undefined) {
+        await context.secrets.store('notemd.ocrApiKey', key)
+        vscode.window.showInformationMessage('notemd: OCR API Key saved securely.')
+      }
+    })
+  )
+  output.appendLine('Registered: notemd.setOcrApiKey')
+
   context.globalState.setKeysForSync([VDITOR_OPTIONS_KEY])
   output.appendLine('notemd activated successfully')
 }
@@ -527,6 +732,7 @@ class EditorPanel {
           this.updateEditTitle()
           scheduleDiffInfo(this.document.getText())
         },
+        setLastWebviewContent: (s) => { this.lastWebviewContent = s },
       }),
       null,
       this.disposables
@@ -645,6 +851,7 @@ class NotemdProvider implements vscode.CustomTextEditorProvider {
           updateEditTitle()
           scheduleDiffInfo(document.getText())
         },
+        setLastWebviewContent: (s) => { lastWebviewContent = s },
       }),
       null,
       disposables
