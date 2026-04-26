@@ -87,14 +87,27 @@ export function escapeAlt(s: string): string {
 
 export async function resolveLocalImage(mdFsPath: string, href: string): Promise<string | null> {
   if (/^[a-z]+:\/\//i.test(href) || href.startsWith('data:')) return null
-  const abs = NodePath.resolve(NodePath.dirname(mdFsPath), href)
-  if (!getImageMime(abs)) return null
+
+  let decodedHref = href
   try {
-    await vscode.workspace.fs.stat(vscode.Uri.file(abs))
+    decodedHref = decodeURIComponent(href)
   } catch {
-    return null
+    // ignore
   }
-  const ws = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(mdFsPath))
-  if (ws && !abs.startsWith(ws.uri.fsPath + NodePath.sep)) return null
-  return abs
+
+  const pathsToTry = new Set([decodedHref, href])
+  for (const p of pathsToTry) {
+    const abs = NodePath.resolve(NodePath.dirname(mdFsPath), p)
+    if (!getImageMime(abs)) continue
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(abs))
+      const ws = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(mdFsPath))
+      if (ws && !abs.startsWith(ws.uri.fsPath + NodePath.sep)) continue
+      return abs
+    } catch {
+      continue
+    }
+  }
+
+  return null
 }

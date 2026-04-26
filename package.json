@@ -3,7 +3,7 @@
   "displayName": "Notemd",
   "icon": "logo.png",
   "description": "A markdown note-taking environment with WYSIWYG editing.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "jesbz",
   "repository": {
     "type": "git",
